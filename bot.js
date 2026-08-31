@@ -16,7 +16,7 @@ const logger = {
 };
 
 // 🔴 THAY BẰNG TOKEN VÀ ADMIN ID CỦA BẠN
-const BOT_TOKEN = '8574423779:AAG0jEqSMu9XSqVroR6kl17I9esp7RmwQK8';
+const BOT_TOKEN = '8574423779:AAEtZkujPgRh7Q7W3yYMKyO1VamFofX40dA';
 const ADMIN_ID = 8226483750;
 const ADMIN_USERNAME = "@cskhvilong1";
 
