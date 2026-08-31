@@ -22,7 +22,7 @@ const ADMIN_USERNAME = "@cskhvilong1";
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ✅ Đặt MENU LỆNH (thêm lệnh martingale)
+// ✅ Đặt MENU LỆNH (đã có /martingale)
 bot.telegram.setMyCommands([
   { command: "start", description: "🏠 Mở menu chính hệ thống" },
   { command: "huongdan", description: "📖 Bảng hướng dẫn sử dụng" },
@@ -42,7 +42,7 @@ bot.telegram.setMyCommands([
 // ╚══════════════════════════════════════════════════════════════╝
 const HISTORY_API_URL = "https://wtxmd52.tele68.com/v1/txmd5/lite-sessions";
 const MAX_HISTORY_STORE = 100;
-const MIN_CONFIDENCE_AUTO_BET = 60;  // giảm xuống 30 nếu muốn dễ đặt hơn
+const MIN_CONFIDENCE_AUTO_BET = 0;   // ✅ GIẢM XUỐNG 0 ĐỂ DỄ ĐẶT
 const AUTO_BET_RUN_UNTIL_STOP = true;
 
 let dynamic_weights = {
@@ -72,9 +72,9 @@ function init_user_state(chat_id) {
       history: [], points_history: [],
       auto_bet_enabled: false,
       bet_amount: 10000,
-      base_bet: 10000,                // ✅ số tiền gốc cho gấp thếp
-      martingale_active: false,       // ✅ bật/tắt gấp thếp
-      consecutive_losses: 0,          // ✅ số lần thua liên tiếp
+      base_bet: 10000,
+      martingale_active: false,
+      consecutive_losses: 0,
       current_prediction: null,
       waiting_for_result: false,
       has_bet_this_session: false,
@@ -275,20 +275,18 @@ function ai_tu_hoc(chat_id, du_doan, thuc_te) {
   const st = user_states[chat_id]; if(!st) return;
   if (du_doan === thuc_te) {
     st.win_streak++; st.lose_streak=0; st.total_win++;
-    // Nếu thắng, reset số lần thua liên tiếp và khôi phục bet_amount về base_bet
     st.consecutive_losses = 0;
     st.bet_amount = st.base_bet || 10000;
     for(const k in dynamic_weights) dynamic_weights[k] = Math.min(dynamic_weights[k]+0.05, 15);
   } else {
     st.lose_streak++; st.win_streak=0; st.total_lose++;
-    // Nếu thua, tăng số lần thua liên tiếp
     st.consecutive_losses++;
     for(const k in dynamic_weights) dynamic_weights[k] = Math.max(dynamic_weights[k]-0.03, 2);
   }
 }
 
 // ==========================================
-// 🌐 ĐĂNG NHẬP + SOCKET.IO (ĐÃ SỬA LỖI)
+// 🌐 ĐĂNG NHẬP + SOCKET.IO (ĐÃ SỬA)
 // ==========================================
 function md5(t){ return CryptoJS.MD5(t).toString(); }
 
@@ -326,7 +324,7 @@ async function login_and_get_token(u, p){
     logger.error('[LOGIN] Lỗi kết nối: ' + e.message);
     return { _error: 'Lỗi kết nối: ' + e.message };
   }
-  }
+      }
 // ==========================================
 // ⭐ PING + WATCHDOG + KHÔNG TREO RENDER
 // ==========================================
@@ -467,14 +465,20 @@ function start_websocket(chat_id, token) {
       // ✅ TÍNH TOÁN SỐ TIỀN ĐẶT CƯỢC THEO GẤP THẾP
       let currentBet = st.bet_amount;
       if (st.martingale_active && st.consecutive_losses > 0) {
-        // Tăng gấp đôi sau mỗi lần thua (tối đa 5 lần để tránh tràn số)
         const multiplier = Math.pow(2, Math.min(st.consecutive_losses, 5));
         currentBet = st.base_bet * multiplier;
-        // Giới hạn không vượt quá số dư hiện có
         if (currentBet > st.balance) currentBet = st.balance;
       }
 
-      // ✅ ĐẶT CƯỢC
+      // ✅ KIỂM TRA SỐ DƯ TRƯỚC KHI ĐẶT
+      if (currentBet > st.balance) {
+        bot.telegram.sendMessage(chat_id,
+          `⚠️ Số dư không đủ: ${currentBet.toLocaleString()} > ${st.balance.toLocaleString()}`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+        return;
+      }
+
       if (!st.has_bet_this_session && !st.betLock && dt >= MIN_CONFIDENCE_AUTO_BET) {
         st.betLock = true;
         const pay = { type: st.current_prediction, amount: Math.floor(currentBet) };
@@ -662,7 +666,6 @@ bot.command('login', async ctx => {
   }
   init_user_state(ctx.chat.id);
   user_states[ctx.chat.id].balance = r.money;
-  // Khởi tạo bet_amount và base_bet với số tiền mặc định (nếu chưa có)
   if (!user_states[ctx.chat.id].bet_amount) {
     user_states[ctx.chat.id].bet_amount = 10000;
     user_states[ctx.chat.id].base_bet = 10000;
@@ -682,17 +685,16 @@ bot.command('autobet', ctx => {
     const amt = parseInt(w[2]) || 10000;
     st.auto_bet_enabled = true;
     st.bet_amount = amt;
-    st.base_bet = amt;  // lưu làm mốc cho gấp thếp
-    st.consecutive_losses = 0; // reset
+    st.base_bet = amt;
+    st.consecutive_losses = 0;
     ctx.reply(`🟢 AUTO BẬT | ${amt.toLocaleString()} WIN | CHẠY ĐẾN /autobet off`);
   } else {
     st.auto_bet_enabled = false;
-    st.martingale_active = false; // tắt gấp thếp nếu tắt auto
+    st.martingale_active = false;
     ctx.reply('🔴 AUTO ĐÃ DỪNG');
   }
 });
 
-// ✅ LỆNH BẬT/TẮT GẤP THẾP (MARTINGALE)
 bot.command('martingale', ctx => {
   const cid = ctx.chat.id;
   if(!check_auth(cid)) return ctx.replyWithHTML(locked_msg());
