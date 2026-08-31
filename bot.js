@@ -18,7 +18,7 @@ const logger = {
 // 🔴 GIỮ NGUYÊN GIÁ TRỊ CỦA BẠN
 const BOT_TOKEN = '8574423779:AAECp-4sMKuj6VKWtF56XKUw6TpGl7Qice0';
 const ADMIN_ID = 8226483750;
-const ADMIN_USERNAME = "@ChAnTaoDz";
+const ADMIN_USERNAME = "@cskhvilong1";
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -521,7 +521,7 @@ bot.command('taokey', ctx => {
   valid_keys[key] = n; saveData();
   const het = new Date(Date.now()+n*86400000).toLocaleString('vi-VN');
   ctx.replyWithHTML(`✅ KEY: <code>${key}</code>\n⏳ ${n} NGÀY\n📅 ${het}\n📊 CÒN: ${Object.keys(valid_keys).length}`);
-});ELIT
+});
 
 bot.command('danhsachkey', ctx => {
   if (ctx.chat.id !== ADMIN_ID) return ctx.reply('⛔ Chỉ admin');
