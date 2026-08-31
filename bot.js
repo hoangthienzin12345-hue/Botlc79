@@ -352,11 +352,17 @@ function start_websocket(chat_id, token) {
     delete active_sockets[chat_id];
   }
 
-  // ⭐ Tạo socket GIỐNG CODE GỐC (dùng path, không ghi namespace trong URL)
+  // ⭐ Kết nối socket – GIỐNG CODE GỐC + THÊM HEADERS
   const sio = io('https://wtxmd52.tele68.com', {
     path: 'txmd5/',
-    transports: ['polling', 'websocket'],   // ✅ Thêm polling fallback
+    transports: ['polling', 'websocket'],
     auth: { token },
+    // ✅ THÊM HEADERS GIỐNG FETCH_HISTORY
+    extraHeaders: {
+      'User-Agent': 'Mozilla/5.0',
+      'Origin': 'https://lc79b.bet',
+      'Referer': 'https://lc79b.bet/'
+    },
     reconnection: true,
     reconnectionAttempts: 99999,
     reconnectionDelay: 3000,
@@ -367,23 +373,18 @@ function start_websocket(chat_id, token) {
   active_sockets[chat_id] = sio;
   const st = user_states[chat_id];
 
-  // Xóa timer cũ nếu có
   if (st.pingTimer) clearInterval(st.pingTimer);
-
-  // Ping mỗi 25s giữ kết nối
   st.pingTimer = setInterval(() => {
     if (sio.connected) {
-      // ⭐ KHÔNG có tham số '/txmd5' thứ 3
       sio.emit('ping', {});
       st.lastPingAt = Date.now();
     }
   }, 25000);
 
-  // ⭐ Sự kiện kết nối – KHÔNG có tham số '/txmd5'
+  // ---------- CÁC SỰ KIỆN (KHÔNG CÓ THAM SỐ '/txmd5') ----------
   sio.on('connect', async () => {
     logger.info(`[${chat_id}] ✅ SOCKET KẾT NỐI`);
     st.lastPingAt = Date.now();
-
     const [lk, ld] = await fetch_history_from_api(50);
     let tb = '';
     if (lk.length) {
@@ -393,7 +394,6 @@ function start_websocket(chat_id, token) {
     } else {
       tb = `\n║ ⚠️ Thu thập tự động`;
     }
-
     bot.telegram.sendMessage(chat_id,
       `<pre>╔═══════════════════════════════╗
 ║     🟢 KẾT NỐI THÀNH CÔNG 🟢    ║
@@ -406,7 +406,6 @@ function start_websocket(chat_id, token) {
     ).catch(() => {});
   });
 
-  // ⭐ Mất kết nối – KHÔNG tham số '/txmd5'
   sio.on('disconnect', () => {
     logger.warn(`[${chat_id}] 🔴 NGẮT KẾT NỐI — TỰ KẾT NỐI LẠI`);
     bot.telegram.sendMessage(chat_id,
@@ -419,21 +418,18 @@ function start_websocket(chat_id, token) {
     ).catch(() => {});
   });
 
-  // ⭐ Phiên mới – KHÔNG tham số '/txmd5'
   sio.on('new-session', (data) => {
     st.session_id = data?.id || 'N/A';
     st.has_bet_this_session = false;
     st.betLock = false;
     const n = st.history.length;
     const dt = tinh_do_tin_cay(st.history, st.points_history);
-
     let msg = `<pre>╔═══════════════════════════════╗
 ║    💎 AI VI LONG ELITE 💎      ║
 ║       ✨ PHIÊN MỚI MỞ ✨        ║
 ╠═══════════════════════════════╣
 ║ 🎯 MÃ PHIÊN: ${st.session_id}
 ║ 📊 ĐÃ THU THẬP: ${n}/20 KÊT QUẢ</pre>`;
-
     if (n >= 3) {
       const pred = make_prediction_vip(st.history, st.points_history);
       st.current_prediction = pred;
@@ -452,15 +448,12 @@ function start_websocket(chat_id, token) {
       msg += `\n<pre>║ ⏳ ĐANG THU DỮ LIỆU</pre>`;
     }
     msg += `\n<pre>╚═══════════════════════════════╝</pre>`;
-
     bot.telegram.sendMessage(chat_id, msg, { parse_mode: 'HTML' }).catch(() => {});
   });
 
-  // ⭐ Cập nhật trạng thái – KHÔNG tham số '/txmd5'
   sio.on('tick-update', (data) => {
     const gs = data?.state;
     const dt = tinh_do_tin_cay(st.history, st.points_history);
-
     if (gs === 'BETTING' && st.auto_bet_enabled && st.current_prediction && AUTO_BET_RUN_UNTIL_STOP) {
       let currentBet = st.bet_amount;
       if (st.martingale_active && st.consecutive_losses > 0) {
@@ -468,7 +461,6 @@ function start_websocket(chat_id, token) {
         currentBet = st.base_bet * multiplier;
         if (currentBet > st.balance) currentBet = st.balance;
       }
-
       if (currentBet > st.balance) {
         bot.telegram.sendMessage(chat_id,
           `⚠️ Số dư không đủ: ${currentBet.toLocaleString()} > ${st.balance.toLocaleString()}`,
@@ -476,12 +468,10 @@ function start_websocket(chat_id, token) {
         ).catch(() => {});
         return;
       }
-
       if (!st.has_bet_this_session && !st.betLock && dt >= MIN_CONFIDENCE_AUTO_BET) {
         st.betLock = true;
         const pay = { type: st.current_prediction, amount: Math.floor(currentBet) };
         try {
-          // ⭐ KHÔNG tham số '/txmd5'
           sio.emit('bet', pay);
           st.has_bet_this_session = true;
           st.waiting_for_result = true;
@@ -504,7 +494,6 @@ function start_websocket(chat_id, token) {
     }
   });
 
-  // ⭐ Bet result – KHÔNG tham số '/txmd5'
   sio.on('bet-result', (data) => {
     if (data?.postBalance != null) st.balance = data.postBalance;
     bot.telegram.sendMessage(chat_id,
@@ -518,13 +507,11 @@ function start_websocket(chat_id, token) {
     try { sio.emit('get-current-my-info', {}); } catch(e) {}
   });
 
-  // ⭐ Session result – KHÔNG tham số '/txmd5'
   sio.on('session-result', (data) => {
     st.betLock = false;
     const d = data?.dices || [0,0,0];
     const tong = d.reduce((a,b) => a+b, 0);
     const kq = data?.resultTruyenThong || 'N/A';
-
     if (kq === 'TAI' || kq === 'XIU') {
       st.history.push(kq);
       st.points_history.push(tong);
@@ -534,7 +521,6 @@ function start_websocket(chat_id, token) {
       }
       if (st.current_prediction) ai_tu_hoc(chat_id, st.current_prediction, kq);
     }
-
     const icon = kq === 'TAI' ? '🔵 TÀI' : (kq === 'XIU' ? '🔴 XỈU' : '⚪ LỖI');
     let row = `<pre>╔═══════════════════════════════╗
 ║ 🎲 ${d[0]}-${d[1]}-${d[2]} = ${tong} → ${icon}</pre>`;
@@ -548,11 +534,10 @@ function start_websocket(chat_id, token) {
     bot.telegram.sendMessage(chat_id, row, { parse_mode: 'HTML' }).catch(() => {});
   });
 
-  // ⭐ Lỗi kết nối – KHÔNG tham số '/txmd5'
   sio.on('connect_error', (err) => {
     logger.error('SOCKET ERR: ' + err.message);
   });
-  }
+            }
 
 // ==========================================
 // CÁC LỆNH BOT
