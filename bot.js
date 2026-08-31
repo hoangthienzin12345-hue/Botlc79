@@ -15,14 +15,14 @@ const logger = {
   error: m => console.log(`[ERROR] ${new Date().toLocaleString('vi-VN')} → ${m}`),
 };
 
-// 🔴 THAY BẰNG TOKEN VÀ ADMIN ID CỦA BẠN
+// 🔴 ĐÃ CẬP NHẬT TOKEN VÀ ADMIN ID CỦA BẠN
 const BOT_TOKEN = '8574423779:AAECp-4sMKuj6VKWtF56XKUw6TpGl7Qice0';
 const ADMIN_ID = 8226483750;
-const ADMIN_USERNAME = "@cskhvilong1";
+const ADMIN_USERNAME = "@ChAnTaoDz";
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ✅ Đặt MENU LỆNH (đã có /martingale)
+// ✅ Đặt MENU LỆNH (đã thêm /martingale)
 bot.telegram.setMyCommands([
   { command: "start", description: "🏠 Mở menu chính hệ thống" },
   { command: "huongdan", description: "📖 Bảng hướng dẫn sử dụng" },
@@ -42,7 +42,7 @@ bot.telegram.setMyCommands([
 // ╚══════════════════════════════════════════════════════════════╝
 const HISTORY_API_URL = "https://wtxmd52.tele68.com/v1/txmd5/lite-sessions";
 const MAX_HISTORY_STORE = 100;
-const MIN_CONFIDENCE_AUTO_BET = 0;   // ✅ GIẢM XUỐNG 0 ĐỂ DỄ ĐẶT
+const MIN_CONFIDENCE_AUTO_BET = 30;   // ✅ GIẢM XUỐNG 30 ĐỂ DỄ ĐẶT HƠN
 const AUTO_BET_RUN_UNTIL_STOP = true;
 
 let dynamic_weights = {
@@ -324,8 +324,7 @@ async function login_and_get_token(u, p){
     logger.error('[LOGIN] Lỗi kết nối: ' + e.message);
     return { _error: 'Lỗi kết nối: ' + e.message };
   }
-      }
-// ==========================================
+  }// ==========================================
 // ⭐ PING + WATCHDOG + KHÔNG TREO RENDER
 // ==========================================
 function startAntiSleep() {
