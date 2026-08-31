@@ -18,7 +18,7 @@ const logger = {
 // ==========================================
 // CẤU HÌNH BOT
 // ==========================================
-const BOT_TOKEN = '8812676489:AAFWTJS8dpvf4nwe2rFYywIkMIZgWw2IaTU';
+const BOT_TOKEN = '8574423779:AAECp-4sMKuj6VKWtF56XKUw6TpGl7Qice0';
 const ADMIN_ID = 8226483750;
 const ADMIN_USERNAME = "@ChAnTaoDz";
 
