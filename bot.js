@@ -352,9 +352,10 @@ function start_websocket(chat_id, token) {
     delete active_sockets[chat_id];
   }
 
-  // Kết nối socket với namespace /txmd5
-  const sio = io('https://wtxmd52.tele68.com/txmd5', {
-    transports: ['websocket'],
+  // ⭐ Tạo socket GIỐNG CODE GỐC (dùng path, không ghi namespace trong URL)
+  const sio = io('https://wtxmd52.tele68.com', {
+    path: 'txmd5/',
+    transports: ['polling', 'websocket'],   // ✅ Thêm polling fallback
     auth: { token },
     reconnection: true,
     reconnectionAttempts: 99999,
@@ -372,12 +373,13 @@ function start_websocket(chat_id, token) {
   // Ping mỗi 25s giữ kết nối
   st.pingTimer = setInterval(() => {
     if (sio.connected) {
+      // ⭐ KHÔNG có tham số '/txmd5' thứ 3
       sio.emit('ping', {});
       st.lastPingAt = Date.now();
     }
   }, 25000);
 
-  // Sự kiện kết nối thành công
+  // ⭐ Sự kiện kết nối – KHÔNG có tham số '/txmd5'
   sio.on('connect', async () => {
     logger.info(`[${chat_id}] ✅ SOCKET KẾT NỐI`);
     st.lastPingAt = Date.now();
@@ -404,7 +406,7 @@ function start_websocket(chat_id, token) {
     ).catch(() => {});
   });
 
-  // Mất kết nối
+  // ⭐ Mất kết nối – KHÔNG tham số '/txmd5'
   sio.on('disconnect', () => {
     logger.warn(`[${chat_id}] 🔴 NGẮT KẾT NỐI — TỰ KẾT NỐI LẠI`);
     bot.telegram.sendMessage(chat_id,
@@ -417,7 +419,7 @@ function start_websocket(chat_id, token) {
     ).catch(() => {});
   });
 
-  // Phiên mới
+  // ⭐ Phiên mới – KHÔNG tham số '/txmd5'
   sio.on('new-session', (data) => {
     st.session_id = data?.id || 'N/A';
     st.has_bet_this_session = false;
@@ -454,7 +456,7 @@ function start_websocket(chat_id, token) {
     bot.telegram.sendMessage(chat_id, msg, { parse_mode: 'HTML' }).catch(() => {});
   });
 
-  // Cập nhật trạng thái và đặt cược
+  // ⭐ Cập nhật trạng thái – KHÔNG tham số '/txmd5'
   sio.on('tick-update', (data) => {
     const gs = data?.state;
     const dt = tinh_do_tin_cay(st.history, st.points_history);
@@ -479,6 +481,7 @@ function start_websocket(chat_id, token) {
         st.betLock = true;
         const pay = { type: st.current_prediction, amount: Math.floor(currentBet) };
         try {
+          // ⭐ KHÔNG tham số '/txmd5'
           sio.emit('bet', pay);
           st.has_bet_this_session = true;
           st.waiting_for_result = true;
@@ -500,7 +503,8 @@ function start_websocket(chat_id, token) {
       }
     }
   });
-    // Xác nhận đặt cược
+
+  // ⭐ Bet result – KHÔNG tham số '/txmd5'
   sio.on('bet-result', (data) => {
     if (data?.postBalance != null) st.balance = data.postBalance;
     bot.telegram.sendMessage(chat_id,
@@ -514,7 +518,7 @@ function start_websocket(chat_id, token) {
     try { sio.emit('get-current-my-info', {}); } catch(e) {}
   });
 
-  // Kết quả phiên
+  // ⭐ Session result – KHÔNG tham số '/txmd5'
   sio.on('session-result', (data) => {
     st.betLock = false;
     const d = data?.dices || [0,0,0];
@@ -544,10 +548,11 @@ function start_websocket(chat_id, token) {
     bot.telegram.sendMessage(chat_id, row, { parse_mode: 'HTML' }).catch(() => {});
   });
 
+  // ⭐ Lỗi kết nối – KHÔNG tham số '/txmd5'
   sio.on('connect_error', (err) => {
     logger.error('SOCKET ERR: ' + err.message);
   });
-}
+  }
 
 // ==========================================
 // CÁC LỆNH BOT
