@@ -109,7 +109,10 @@ async function fetch_history_from_api(limit = 50) {
 }
 
 function check_auth(chat_id) {
+  // ✅ Cho phép admin không cần key
   if (chat_id === ADMIN_ID) return true;
+  
+  // Các user khác kiểm tra key
   if (authorized_users[chat_id]) {
     if (Date.now() / 1000 <= authorized_users[chat_id]) return true;
     else delete authorized_users[chat_id];
