@@ -5,9 +5,6 @@ const { Base64 } = require('js-base64');
 const io = require('socket.io-client');
 const fs = require('fs');
 
-// ==========================================
-// 👑 CẤU HÌNH HỆ THỐNG BOT & LOGGING (GIỐNG GỐC)
-// ==========================================
 const logger = {
   debug: m => console.log(`[DEBUG] ${new Date().toLocaleString('vi-VN')} → ${m}`),
   info:  m => console.log(`[INFO ] ${new Date().toLocaleString('vi-VN')} → ${m}`),
@@ -15,33 +12,30 @@ const logger = {
   error: m => console.log(`[ERROR] ${new Date().toLocaleString('vi-VN')} → ${m}`),
 };
 
-// 🔴 GIỮ NGUYÊN GIÁ TRỊ CỦA BẠN
+// ===== THAY TOKEN VÀ ADMIN ID CỦA BẠN =====
 const BOT_TOKEN = '8574423779:AAECp-4sMKuj6VKWtF56XKUw6TpGl7Qice0';
 const ADMIN_ID = 8226483750;
-const ADMIN_USERNAME = "@cskhvilong1";
+const ADMIN_USERNAME = "@ChAnTaoDz";
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ✅ Đặt MENU LỆNH GIỐNG HỆT
 bot.telegram.setMyCommands([
-  { command: "start", description: "🏠 Mở menu chính hệ thống" },
-  { command: "huongdan", description: "📖 Bảng hướng dẫn sử dụng" },
-  { command: "nhapkey", description: "🔑 Nhập key kích hoạt bản quyền" },
-  { command: "thongtin", description: "💎 Xem thông tin tài khoản & hạn dùng" },
-  { command: "login", description: "🔐 Đăng nhập tài khoản game" },
-  { command: "autobet", description: "⚡ Bật / tắt tự động đặt cược" },
-  { command: "lichsucau", description: "📊 Xem lịch sử cầu gần nhất" },
-  { command: "stop", description: "⏹️ Ngắt kết nối an toàn" },
-  { command: "taokey", description: "👑 [ADMIN] Tạo key bản quyền" },
-  { command: "danhsachkey", description: "📋 [ADMIN] Xem danh sách key còn lại" },
+  { command: "start", description: "🏠 Menu chính" },
+  { command: "huongdan", description: "📖 Hướng dẫn" },
+  { command: "nhapkey", description: "🔑 Nhập key" },
+  { command: "thongtin", description: "💎 Thông tin" },
+  { command: "login", description: "🔐 Đăng nhập game" },
+  { command: "autobet", description: "⚡ Auto bet" },
+  { command: "martingale", description: "📈 Gấp thếp" },
+  { command: "lichsucau", description: "📊 Lịch sử cầu" },
+  { command: "stop", description: "⏹️ Ngắt kết nối" },
+  { command: "taokey", description: "👑 [ADMIN] Tạo key" },
+  { command: "danhsachkey", description: "📋 [ADMIN] Danh sách key" },
 ]);
 
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  ✅ CẤU HÌNH API + THUẬT TOÁN (GIỐNG Y HỆT)                  ║
-// ╚══════════════════════════════════════════════════════════════╝
 const HISTORY_API_URL = "https://wtxmd52.tele68.com/v1/txmd5/lite-sessions";
 const MAX_HISTORY_STORE = 100;
-const MIN_CONFIDENCE_AUTO_BET = 60;
+const MIN_CONFIDENCE_AUTO_BET = 0;  // Đặt 0 để luôn cược
 const AUTO_BET_RUN_UNTIL_STOP = true;
 
 let dynamic_weights = {
@@ -55,7 +49,6 @@ const user_states = {};
 let valid_keys = {};
 let authorized_users = {};
 
-// ✅ LƯU KEY / NGƯỜI DÙNG RA FILE → KHÔNG MẤT KHI RESTART (MỚI)
 const SAVE_FILE = './bot_save.json';
 const saveData = () => fs.writeFileSync(SAVE_FILE, JSON.stringify({ valid_keys, authorized_users }, null, 2));
 try {
@@ -63,25 +56,33 @@ try {
   const d = JSON.parse(raw);
   valid_keys = d.valid_keys || {};
   authorized_users = d.authorized_users || {};
-} catch(e){ logger.info('Chưa có dữ liệu lưu, tạo mới'); }
+} catch(e){ logger.info('Tạo mới dữ liệu'); }
 
 function init_user_state(chat_id) {
   if (!user_states[chat_id]) {
     user_states[chat_id] = {
       history: [], points_history: [],
-      auto_bet_enabled: false, bet_amount: 10000,
-      current_prediction: null, waiting_for_result: false,
-      has_bet_this_session: false, session_id: null,
-      balance: 0, win_streak: 0, lose_streak: 0,
-      total_win: 0, total_lose: 0,
-      lastPingAt: 0, betLock: false // ⭐ AN TOÀN ĐẶT CƯỢC
+      auto_bet_enabled: false,
+      bet_amount: 10000,
+      base_bet: 10000,
+      martingale_active: false,
+      consecutive_losses: 0,
+      current_prediction: null,
+      waiting_for_result: false,
+      has_bet_this_session: false,
+      session_id: null,
+      balance: 0,
+      win_streak: 0,
+      lose_streak: 0,
+      total_win: 0,
+      total_lose: 0,
+      lastPingAt: 0,
+      betLock: false,
+      pingTimer: null
     };
   }
 }
 
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  ✅ TẢI LỊCH SỬ TỪ API (GIỐNG GỐC)                            ║
-// ╚══════════════════════════════════════════════════════════════╝
 async function fetch_history_from_api(limit = 50) {
   try {
     const headers = {
@@ -102,14 +103,11 @@ async function fetch_history_from_api(limit = 50) {
     }
     return [ketqua, diem];
   } catch (e) {
-    logger.error('LỖI TẢI LỊCH SỬ API: ' + e.message);
+    logger.error('LỖI TẢI LỊCH SỬ: ' + e.message);
     return [[], []];
   }
 }
 
-// ==========================================
-// 🛡️ BẢO MẬT & KIỂM TRA BẢN QUYỀN
-// ==========================================
 function check_auth(chat_id) {
   if (chat_id === ADMIN_ID) return true;
   if (authorized_users[chat_id]) {
@@ -142,9 +140,6 @@ function format_expire_time(ts) {
   return `✅ CÒN ${m} PHÚT`;
 }
 
-// ==========================================
-// 🧠 THUẬT TOÁN VIP PRO MAX — DỊCH CHÍNH XÁC TỪNG DÒNG
-// ==========================================
 function make_prediction_vip(history, points = []) {
   if (history.length < 3) return Math.random() < 0.5 ? 'TAI' : 'XIU';
   const hist_str = history.slice(-30).map(x => x==='TAI'?'T':'X').join('');
@@ -153,14 +148,12 @@ function make_prediction_vip(history, points = []) {
   let ket_qua_chinh = null;
   let do_tin_cay = 0;
 
-  // 💎 1. CẦU RỒNG
   if (/TTTTTTT$|XXXXXXX$/.test(hist_str)) { ket_qua_chinh = last==='T'?'TAI':'XIU'; do_tin_cay=95; }
   else if (/TTTTTT$|XXXXXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=90; }
   else if (/TTTTT$|XXXXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=85; }
   else if (/TTTT$|XXXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=80; }
   else if (/TTT$|XXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=72; }
 
-  // 💎 3. CẦU ĐỨT
   if (/TTTTTTTT$|XXXXXXXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'XIU':'TAI'; do_tin_cay=88; }
   if (history.length >= 15) {
     const cnt_t = history.slice(-15).filter(x=>x==='TAI').length;
@@ -169,7 +162,6 @@ function make_prediction_vip(history, points = []) {
     if (/XXXXX$/.test(hist_str) && cnt_x > 11) { ket_qua_chinh='TAI'; do_tin_cay = Math.max(do_tin_cay,80); }
   }
 
-  // 💎 4→7. CẦU 1-1 / 2-2 / 3-3 / 4-4
   if (/TXTXTX$|XTXTXT$/.test(hist_str)) { ket_qua_chinh=last==='X'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,87); }
   else if (/TXTX$|XTXT$/.test(hist_str)) { ket_qua_chinh=last==='X'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,78); }
   if (/TTXXTTXX$|XXTTXXTT$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,86); }
@@ -177,14 +169,11 @@ function make_prediction_vip(history, points = []) {
   if (/TTTXXXTTT$|XXXTTTXXX$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,84); }
   else if (/TTTXXX$|XXXTTT$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,75); }
   if (/TTTTXXXX$|XXXXTTTT$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,82); }
-  // ✅ CẦU 5-5
   if (/TTTTTXXXXX$|XXXXXTTTTT$/.test(hist_str)) { ket_qua_chinh=last==='T'?'TAI':'XIU'; do_tin_cay=Math.max(do_tin_cay,83); }
 
-  // 💎 8. CẦU BÁM ĐUÔI 2
   if (/TXT$/.test(hist_str)) { ket_qua_chinh='TAI'; do_tin_cay=Math.max(do_tin_cay,68); }
   if (/XTX$/.test(hist_str)) { ket_qua_chinh='XIU'; do_tin_cay=Math.max(do_tin_cay,68); }
 
-  // 💎 9. THỐNG KÊ
   const r10 = history.slice(-10), r5 = history.slice(-5);
   const t10=r10.filter(x=>x==='TAI').length, x10=10-t10;
   const t5=r5.filter(x=>x==='TAI').length, x5=5-t5;
@@ -195,7 +184,6 @@ function make_prediction_vip(history, points = []) {
   else if (t10>x10) score_tai += 1;
   else if (x10>t10) score_xiu += 1;
 
-  // ✅ ĐIỂM XÚC XẮC
   if (points.length >= 10) {
     const p = points.slice(-10);
     const avg = p.reduce((a,b)=>a+b,0)/10;
@@ -205,7 +193,6 @@ function make_prediction_vip(history, points = []) {
     if (v < 2.5) { avg>10.5 ? score_tai+=2 : score_xiu+=2; }
   }
 
-  // 💎 10+ ✅ MARKOV 1+2+3
   const m1 = { TAI:{TAI:0,XIU:0}, XIU:{TAI:0,XIU:0} };
   const m2 = {}, m3 = {};
   for (let i=0;i<history.length-1;i++) m1[history[i]][history[i+1]]++;
@@ -236,7 +223,6 @@ function make_prediction_vip(history, points = []) {
     }
   }
 
-  // 💎 11. QUYẾT ĐỊNH
   if (ket_qua_chinh) {
     const b = Math.floor(do_tin_cay/8);
     ket_qua_chinh==='TAI' ? score_tai+=b : score_xiu+=b;
@@ -268,57 +254,68 @@ function ai_tu_hoc(chat_id, du_doan, thuc_te) {
   const st = user_states[chat_id]; if(!st) return;
   if (du_doan === thuc_te) {
     st.win_streak++; st.lose_streak=0; st.total_win++;
+    st.consecutive_losses = 0;
+    st.bet_amount = st.base_bet || 10000;
     for(const k in dynamic_weights) dynamic_weights[k] = Math.min(dynamic_weights[k]+0.05, 15);
   } else {
     st.lose_streak++; st.win_streak=0; st.total_lose++;
+    st.consecutive_losses++;
     for(const k in dynamic_weights) dynamic_weights[k] = Math.max(dynamic_weights[k]-0.03, 2);
   }
 }
 
-// ==========================================
-// 🌐 ĐĂNG NHẬP + SOCKET.IO (GIỐNG GỐC)
-// ==========================================
 function md5(t){ return CryptoJS.MD5(t).toString(); }
 
 async function login_and_get_token(u, p){
   try {
     const pw = md5(p);
     const url = `https://apifo88daigia.tele68.com/api?c=3&un=${encodeURIComponent(u)}&pw=${pw}&cp=R&cl=R&pf=web&at=`;
+    logger.info(`[LOGIN] Gọi API: ${url}`);
     const r = await axios.get(url, { timeout: 12000 });
     const d = r.data;
-    if (!d.success) return { _error: 'Lỗi Game: ' + (d.message||'Sai thông tin') };
+    logger.info(`[LOGIN] Phản hồi: ${JSON.stringify(d)}`);
+    if (!d.success) {
+      const errMsg = d.message || 'Sai tài khoản hoặc mật khẩu';
+      logger.error(`[LOGIN] Lỗi: ${errMsg}`);
+      return { _error: `Lỗi Game: ${errMsg}` };
+    }
     let sk = d.sessionKey;
     sk += '='.repeat((4 - sk.length%4)%4);
     const sd = JSON.parse(Base64.decode(sk));
     const nickname = sd.nickname || sd.nickName;
+    logger.info(`[LOGIN] Nickname: ${nickname}`);
     const r2 = await axios.post(
       'https://wlb.tele68.com/v1/lobby/auth/login?cp=R&cl=R&pf=web&at=',
       { nickName: nickname, accessToken: d.accessToken },
-      { headers: { authority:'wlb.tele68.com','content-type':'application/json', origin:'https://lc79b.bet', referer:'https://lc79b.bet/' }, timeout:12000 }
+      { headers: { 'authority':'wlb.tele68.com','content-type':'application/json', 'origin':'https://lc79b.bet', 'referer':'https://lc79b.bet/' }, timeout:12000 }
     );
     const token = r2.data?.token;
-    if(!token) return { _error: 'Lobby không trả token' };
+    if(!token) {
+      logger.error('[LOGIN] Không lấy được token lobby');
+      return { _error: 'Lobby không trả token' };
+    }
+    logger.info(`[LOGIN] Thành công, token: ${token.substring(0,10)}...`);
     return { token, nickname, money: r2.data?.remoteLoginResp?.money || 0 };
-  } catch(e){ return { _error: 'Lỗi kết nối: ' + e.message }; }
+  } catch(e) {
+    logger.error('[LOGIN] Lỗi kết nối: ' + e.message);
+    return { _error: 'Lỗi kết nối: ' + e.message };
+  }
 }
 
-// ⭐⭐⭐ CHỨC NĂNG MỚI: PING + WATCHDOG + KHÔNG TREO RENDER ⭐⭐⭐
 function startAntiSleep() {
-  // Ping Render / chính mình mỗi 40s → không ngủ
   setInterval(async () => {
     try {
       await axios.get('https://lc79b.bet', { timeout: 8000 }).catch(()=>{});
-      logger.info('🌐 PING RENDER OK — giữ kết nối 100%');
+      logger.info('🌐 PING OK');
     } catch(e){}
   }, 40000);
 
-  // Watchdog: kiểm tra luồng mỗi 30s, nếu đứng hình → reset nhẹ
   setInterval(() => {
     const now = Date.now();
     for (const cid in active_sockets) {
       const st = user_states[cid];
       if (st && now - st.lastPingAt > 90000) {
-        logger.warn(`🐶 WATCHDOG: ${cid} đứng hình → ngắt & kết nối lại`);
+        logger.warn(`🐶 WATCHDOG: ${cid} đứng hình`);
         try { active_sockets[cid]?.disconnect?.(); } catch(e){}
       }
     }
@@ -327,24 +324,39 @@ function startAntiSleep() {
 
 function start_websocket(chat_id, token) {
   init_user_state(chat_id);
-  if (active_sockets[chat_id]) { try{ active_sockets[chat_id].disconnect(); }catch(e){} }
+  if (active_sockets[chat_id]) {
+    try { active_sockets[chat_id].disconnect(); } catch(e) {}
+    delete active_sockets[chat_id];
+  }
 
   const sio = io('https://wtxmd52.tele68.com', {
-    path: 'txmd5/', transports: ['websocket'],
+    path: 'txmd5/',
+    transports: ['websocket', 'polling'],
     auth: { token },
-    reconnection: true, reconnectionAttempts: 99999,
-    reconnectionDelay: 3000, reconnectionDelayMax: 5000,
-    timeout: 20000
+    reconnection: true,
+    reconnectionAttempts: 99999,
+    reconnectionDelay: 3000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    extraHeaders: {
+      'User-Agent': 'Mozilla/5.0',
+      'Origin': 'https://lc79b.bet',
+      'Referer': 'https://lc79b.bet/'
+    }
   });
+
   active_sockets[chat_id] = sio;
   const st = user_states[chat_id];
 
-  // ⭐ PING SOCKET MỖI 25s → KHÔNG BỊ NGẮT
-  const pingTimer = setInterval(() => {
-    try { if(sio.connected) { sio.emit('ping', {}, '/txmd5'); st.lastPingAt = Date.now(); } } catch(e){}
+  if (st.pingTimer) clearInterval(st.pingTimer);
+  st.pingTimer = setInterval(() => {
+    if (sio.connected) {
+      sio.emit('ping', {});
+      st.lastPingAt = Date.now();
+    }
   }, 25000);
 
-  sio.on('connect', '/txmd5', async () => {
+  sio.on('connect', async () => {
     logger.info(`[${chat_id}] ✅ SOCKET KẾT NỐI`);
     st.lastPingAt = Date.now();
     const [lk, ld] = await fetch_history_from_api(50);
@@ -364,7 +376,7 @@ function start_websocket(chat_id, token) {
 ╚═══════════════════════════════╝</pre>`, { parse_mode:'HTML' });
   });
 
-  sio.on('disconnect', '/txmd5', () => {
+  sio.on('disconnect', () => {
     logger.warn(`[${chat_id}] 🔴 NGẮT KẾT NỐI — TỰ KẾT NỐI LẠI`);
     bot.telegram.sendMessage(chat_id,
 `<pre>╔═══════════════════════════════╗
@@ -374,7 +386,7 @@ function start_websocket(chat_id, token) {
 ╚═══════════════════════════════╝</pre>`, { parse_mode:'HTML' }).catch(()=>{});
   });
 
-  sio.on('new-session', '/txmd5', (data) => {
+  sio.on('new-session', (data) => {
     st.session_id = data?.id || 'N/A';
     st.has_bet_this_session = false;
     st.betLock = false;
@@ -402,16 +414,30 @@ function start_websocket(chat_id, token) {
     bot.telegram.sendMessage(chat_id, msg, { parse_mode:'HTML' }).catch(()=>{});
   });
 
-  sio.on('tick-update', '/txmd5', (data) => {
+  sio.on('tick-update', (data) => {
     const gs = data?.state;
     const dt = tinh_do_tin_cay(st.history, st.points_history);
     if (gs === 'BETTING' && st.auto_bet_enabled && st.current_prediction && AUTO_BET_RUN_UNTIL_STOP) {
-      // ⭐ KHÓA ĐẶT CƯỢC → KHÔNG ĐẶT LẶP / LỖI
+      let currentBet = st.bet_amount;
+      if (st.martingale_active && st.consecutive_losses > 0) {
+        const multiplier = Math.pow(2, Math.min(st.consecutive_losses, 5));
+        currentBet = st.base_bet * multiplier;
+        if (currentBet > st.balance) currentBet = st.balance;
+      }
+
+      if (currentBet > st.balance) {
+        bot.telegram.sendMessage(chat_id,
+          `⚠️ Số dư không đủ: ${currentBet.toLocaleString()} > ${st.balance.toLocaleString()}`,
+          { parse_mode:'HTML' }
+        ).catch(()=>{});
+        return;
+      }
+
       if (!st.has_bet_this_session && !st.betLock && dt >= MIN_CONFIDENCE_AUTO_BET) {
         st.betLock = true;
-        const pay = { type: st.current_prediction, amount: st.bet_amount };
+        const pay = { type: st.current_prediction, amount: Math.floor(currentBet) };
         try {
-          sio.emit('bet', pay, '/txmd5');
+          sio.emit('bet', pay);
           st.has_bet_this_session = true;
           st.waiting_for_result = true;
           const icon = st.current_prediction==='TAI'?'🔵 TÀI':'🔴 XỈU';
@@ -420,7 +446,8 @@ function start_websocket(chat_id, token) {
 ║      🚀 GỬI LỆNH TỰ ĐỘNG       ║
 ╠═══════════════════════════════╣
 ║ ✅ ĐẶT CƯỢC: ${icon}
-║ 💰 ${st.bet_amount.toLocaleString()} WIN
+║ 💰 ${Math.floor(currentBet).toLocaleString()} WIN
+║ ${st.martingale_active ? `📈 GẤP THẾP (x${Math.pow(2, st.consecutive_losses).toFixed(0)})` : ''}
 ║ ⏳ CHỜ KẾT QUẢ
 ╚═══════════════════════════════╝</pre>`, { parse_mode:'HTML' }).catch(()=>{});
         } catch(e){ st.betLock=false; }
@@ -428,7 +455,7 @@ function start_websocket(chat_id, token) {
     }
   });
 
-  sio.on('bet-result', '/txmd5', (data) => {
+  sio.on('bet-result', (data) => {
     if (data?.postBalance != null) st.balance = data.postBalance;
     bot.telegram.sendMessage(chat_id,
 `<pre>╔═══════════════════════════════╗
@@ -436,10 +463,10 @@ function start_websocket(chat_id, token) {
 ╠═══════════════════════════════╣
 ║ 💰 SỐ DƯ: ${st.balance.toLocaleString()} WIN
 ╚═══════════════════════════════╝</pre>`, { parse_mode:'HTML' }).catch(()=>{});
-    try { sio.emit('get-current-my-info', null, '/txmd5'); } catch(e){}
+    try { sio.emit('get-current-my-info', {}); } catch(e){}
   });
 
-  sio.on('session-result', '/txmd5', (data) => {
+  sio.on('session-result', (data) => {
     st.betLock = false;
     const d = data?.dices || [0,0,0];
     const tong = d.reduce((a,b)=>a+b,0);
@@ -462,31 +489,16 @@ function start_websocket(chat_id, token) {
     bot.telegram.sendMessage(chat_id, row, { parse_mode:'HTML' }).catch(()=>{});
   });
 
-  sio.on('connect_error', '/txmd5', (err) => {
+  sio.on('connect_error', (err) => {
     logger.error('SOCKET ERR: ' + err.message);
   });
 }
 
-// ==========================================
-// 🔑 TẤT CẢ LỆNH — GIỐNG Y HỆT GỐC
-// ==========================================
+// ========= LỆNH BOT =========
 bot.start(ctx => {
   const cid = ctx.chat.id; init_user_state(cid);
   if (check_auth(cid)) {
     const han = cid===ADMIN_ID ? '👑 VĨNH VIỄN - ADMIN' : format_expire_time(authorized_users[cid]);
-    ctx.replyWithHTML(
-`<pre>╔═══════════════════════════════╗
-║    💎 CHÀO MỪNG VIP 💎     ║
-║      ✨ VI LONG ELITE ✨        ║
-╠═══════════════════════════════╣
-║ ✅ ĐÃ KÍCH HOẠT
-║ ⏳ ${han}
-╠═══════════════════════════════╣
-║ 📖 /huongdan | 🔐 /login
-║ ⚡ /autobet | 📊 /lichsucau
-║ ⏹️ /stop
-╚═══════════════════════════════╝</pre>`);
-  } else {
     ctx.replyWithHTML(
 `<pre>╔═══════════════════════════════╗
 ║   🏠 TRANG CHỦ 💎 VI LONG ║
@@ -505,6 +517,7 @@ bot.command('huongdan', ctx => ctx.replyWithHTML(
 ║ 🔑 /nhapkey KEY
 ║ 🔐 /login TK MK
 ║ ⚡ /autobet on 10000 | off
+║ 📈 /martingale on | off
 ║ 📊 /lichsucau | 💎 /thongtin
 ║ ⏹️ /stop | 👑 /taokey 30
 ╠═══════════════════════════════╣
@@ -552,6 +565,7 @@ bot.command('thongtin', ctx => {
 🆔 <code>${cid}</code>
 ⏳ ${han}
 ⚡ ${st.auto_bet_enabled?'🟢 BẬT':'🔴 TẮT'}
+📈 ${st.martingale_active?'🟢 GẤP THẾP':'🔴 TẮT'} (thua liên: ${st.consecutive_losses})
 💰 ${st.bet_amount.toLocaleString()} | DƯ: ${st.balance.toLocaleString()}
 ✅ THẮNG:${st.total_win} | ❌ THUA:${st.total_lose}
 📊 ${st.history.length} PHIÊN</pre>`);
@@ -571,10 +585,17 @@ bot.command('login', async ctx => {
   if(w.length!==3) return ctx.reply('✅ /login TAIKHOAN MATKHAU');
   const m = await ctx.reply('🔄 Đang kết nối...');
   const r = await login_and_get_token(w[1], w[2]);
-  if(r._error) return ctx.telegram.editMessageText(ctx.chat.id, m.message_id, '❌ '+r._error);
+  if(r._error) {
+    await ctx.telegram.editMessageText(ctx.chat.id, m.message_id, null, '❌ ' + r._error);
+    return;
+  }
   init_user_state(ctx.chat.id);
   user_states[ctx.chat.id].balance = r.money;
-  ctx.telegram.editMessageText(ctx.chat.id, m.message_id, `✅ ${r.nickname} | ${r.money.toLocaleString()} WIN`);
+  if (!user_states[ctx.chat.id].bet_amount) {
+    user_states[ctx.chat.id].bet_amount = 10000;
+    user_states[ctx.chat.id].base_bet = 10000;
+  }
+  await ctx.telegram.editMessageText(ctx.chat.id, m.message_id, null, `✅ ${r.nickname} | ${r.money.toLocaleString()} WIN`);
   start_websocket(ctx.chat.id, r.token);
 });
 
@@ -586,12 +607,36 @@ bot.command('autobet', ctx => {
   if(w.length<2) return ctx.reply('✅ /autobet on 10000 | off');
   const st = user_states[cid];
   if(w[1].toLowerCase()==='on'){
-    const amt = parseInt(w[2])||10000;
-    st.auto_bet_enabled=true; st.bet_amount=amt;
+    const amt = parseInt(w[2]) || 10000;
+    st.auto_bet_enabled = true;
+    st.bet_amount = amt;
+    st.base_bet = amt;
+    st.consecutive_losses = 0;
     ctx.reply(`🟢 AUTO BẬT | ${amt.toLocaleString()} WIN | CHẠY ĐẾN /autobet off`);
   } else {
-    st.auto_bet_enabled=false;
+    st.auto_bet_enabled = false;
+    st.martingale_active = false;
     ctx.reply('🔴 AUTO ĐÃ DỪNG');
+  }
+});
+
+bot.command('martingale', ctx => {
+  const cid = ctx.chat.id;
+  if(!check_auth(cid)) return ctx.replyWithHTML(locked_msg());
+  const st = user_states[cid];
+  if(!st || !active_sockets[cid]) return ctx.reply('⚠️ Phải /login trước');
+  const w = ctx.message.text.split(/\s+/);
+  if(w.length<2) return ctx.reply('✅ /martingale on | off');
+  if(w[1].toLowerCase()==='on'){
+    st.martingale_active = true;
+    st.consecutive_losses = 0;
+    st.bet_amount = st.base_bet || 10000;
+    ctx.reply('🟢 ĐÃ BẬT GẤP THẾP (x2 khi thua)');
+  } else {
+    st.martingale_active = false;
+    st.consecutive_losses = 0;
+    st.bet_amount = st.base_bet || 10000;
+    ctx.reply('🔴 ĐÃ TẮT GẤP THẾP');
   }
 });
 
@@ -599,26 +644,30 @@ bot.command('stop', ctx => {
   const cid = ctx.chat.id;
   if(!check_auth(cid)) return ctx.replyWithHTML(locked_msg());
   if(active_sockets[cid]){
+    const st = user_states[cid];
+    if (st && st.pingTimer) {
+      clearInterval(st.pingTimer);
+      st.pingTimer = null;
+    }
     try{ active_sockets[cid].disconnect(); }catch(e){}
     delete active_sockets[cid];
-    user_states[cid].auto_bet_enabled = false;
+    if (st) {
+      st.auto_bet_enabled = false;
+      st.martingale_active = false;
+    }
     ctx.reply('⏹️ ĐÃ NGẮT AN TOÀN');
   } else ctx.reply('⚠️ Không có kết nối');
 });
 
-// ==========================================
-// 🚀 CHẠY BOT + CHỐNG TREO RENDER
-// ==========================================
+// ========= KHỞI ĐỘNG =========
 bot.catch(e => logger.error('BOT ERR: ' + e.message));
 bot.launch({ dropPendingUpdates: true }).then(() => {
-  logger.info('👑 VIP SYSTEM ONLINE — VI LONG ELITE ✨ JS + PING RENDER');
+  logger.info('👑 VIP SYSTEM ONLINE — VI LONG ELITE ✨');
   startAntiSleep();
 });
 
-// ⭐ CHẠY HTTP NHỎ → TREO RENDER / KEEP ALIVE 100%
 const http = require('http');
 http.createServer((_, res)=>{ res.writeHead(200); res.end('BOT OK '+Date.now()); }).listen(process.env.PORT || 3000, ()=>logger.info('🌐 KEEP-ALIVE HTTP: ' + (process.env.PORT||3000)));
 
-// ⭐ CHỐNG BỊ TREO / BỊ KILL
 process.on('unhandledRejection', e => logger.error('REJECT: ' + e.message));
 process.on('uncaughtException', e => logger.error('EXCEPT: ' + e.message + ' → TIẾP TỤC CHẠY'));
